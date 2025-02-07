@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مهمة إنقاذ المجرة - مع عد تنازلي</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #222;
+            overflow: hidden;
+        }
+        #game-container {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+</head>
+<body>
+    <div id="game-container"></div>
+
+    <script>
+        const config = {
+            type: Phaser.AUTO,
+            width: 800,
+            height: 600,
+            backgroundColor: '#1a1a1a',
+            parent: 'game-container',
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 300 },
+                    debug: false
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update
+            }
+        };
+
+        const game = new Phaser.Game(config);
+
+        let player, cursors, platforms, bullets, boss, shield, fireballs, timerText;
+        let score = 0, health = 3, shieldActive = false, shieldTimer = 0;
+        let timeLeft = 60; // العد التنازلي 60 ثانية
+        let isFinalPhase = false;
+
+        function preload() {
+            this.load.image('sky', 'https://labs.phaser.io/assets/skies/space3.png');
+            this.load.image('ground', 'https://labs.phaser.io/assets/sprites/platform.png');
+            this.load.image('player', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
+            this.load.image('bullet', 'https://labs.phaser.io/assets/sprites/bullet.png');
+            this.load.image('boss', 'https://labs.phaser.io/assets/sprites/ufo.png');
+            this.load.image('fireball', 'https://labs.phaser.io/assets/sprites/yellow_ball.png');
+            this.load.image('shield', 'https://labs.phaser.io/assets/sprites/blue_ball.png');
+        }
+
+        function create() {
+            // خلفية
+            this.add.image(400, 300, 'sky');
+
+            // منصات
+            platforms = this.physics.add.staticGroup();
+            platforms.create(400, 568, 'ground').setScale(2).refreshBody();
+            platforms.create(600, 400, 'ground');
+            platforms.create(50, 250, 'ground');
+            platforms.create(750, 220, 'ground');
+
+            // لاعب
+            player = this.physics.add.sprite(100, 450, 'player');
+            player.setBounce(0.2);
+            player.setCollideWorldBounds(true);
+            this.physics.add.collider(player, platforms);
+
+            // تحكم
+            cursors = this.input.keyboard.createCursorKeys();
+
+            // درع حول المحارب
+            shield = this.add.circle(player.x, player.y, 30, 0x00ffff, 0.3);
+            shield.setVisible(false);
+
+            // زعيم
+            boss = this.physics.add.sprite(400, 100, 'boss');
+            boss.setCollideWorldBounds(true);
+            boss.setVelocityX(200);
+            this.physics.add.collider(boss, platforms);
+
+            // كرات نارية
+            fireballs = this.physics.add.group();
+
+            // عد تنازلي
+            timerText = this.add.text(16, 16, 'Time: 60', { fontSize: '24px', fill: '#ffffff' });
+
+            this.time.addEvent({
+                delay: 1000,
+                callback: updateTimer,
+                loop: true
+            });
+
+            this.time.addEvent({
+                delay: 2000,
+                callback: () => spawnFireball(this),
+                loop: true
+            });
+
+            // إطلاق النار
+            bullets = this.physics.add.group();
+            this.input.keyboard.on('keydown-SPACE', shootBullet, this);
+        }
+
+        function update() {
+            // حركة اللاعب
+            if (cursors.left.isDown) {
+                player.setVelocityX(-160);
+            } else if (cursors.right.isDown) {
+                player.setVelocityX(160);
+            } else {
+                player.setVelocityX(0);
+            }
+
+            if (cursors.up.isDown && player.body.touching.down) {
+                player.setVelocityY(-330);
+            }
+
+            // درع حول اللاعب
+            if (shieldActive) {
+                shield.setVisible(true);
+                shield.setPosition(player.x, player.y);
+                shieldTimer--;
+
+                if (shieldTimer <= 0) {
+                    shieldActive = false;
+                    shield.setVisible(false);
+                }
+            }
+        }
+
+        function updateTimer() {
+            timeLeft--;
+            timerText.setText('Time: ' + timeLeft);
+
+            if (timeLeft <= 10 && !isFinalPhase) {
+                enterFinalPhase();
+            }
+
+            if (timeLeft <= 0) {
+                gameOver();
+            }
+        }
+
+        function enterFinalPhase() {
+            isFinalPhase = true;
+            boss.setVelocityX(400); // زيادة سرعة الزعيم
+            this.time.addEvent({
+                delay: 1000, // إطلاق كرات نارية كل ثانية
+                callback: () => spawnFireball(this),
+                loop: true
+            });
+        }
+
+        function gameOver() {
+            this.physics.pause();
+            player.setTint(0xff0000);
+            alert('انتهى الوقت! لقد خسرت.');
+            location.reload();
+        }
+
+        function shootBullet() {
+            const bullet = bullets.create(player.x, player.y - 20, 'bullet');
+            bullet.setVelocityY(-400);
+            bullet.setCollideWorldBounds(false);
+            this.physics.add.collider(bullet, boss, hitBoss, null, this);
+        }
+
+        function hitBoss(bullet, boss) {
+            bullet.destroy();
+            boss.setTint(0xff0000);
+
+            this.time.delayedCall(100, () => boss.clearTint(), [], this);
+
+            health--;
+            if (health <= 0) {
+                boss.destroy();
+                alert('لقد هزمت الزعيم! انتهت اللعبة.');
+                location.reload();
+            }
+        }
+
+        function spawnFireball(scene) {
+            const fireball = fireballs.create(boss.x, boss.y + 20, 'fireball');
+            fireball.setVelocityY(200);
+            fireball.setCollideWorldBounds(false);
+            scene.physics.add.overlap(player, fireball, hitByFireball, null, scene);
+        }
+
+        function hitByFireball(player, fireball) {
+            fireball.destroy();
+            if (!shieldActive) {
+                health--;
+                if (health <= 0) {
+                    gameOver.call(this);
+                }
+            }
+        }
+
+        function activateShield() {
+            shieldActive = true;
+            shieldTimer = 300; // مدة الدرع (5 ثواني)
+        }
+    </script>
+</body>
+</html>
